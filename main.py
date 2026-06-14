@@ -9,10 +9,8 @@ def _ensure_admin() -> None:
         sys.exit(0)
 
 
-_ensure_admin()
-
-from gui.app import CrispApp
-
 if __name__ == "__main__":
+    _ensure_admin()
+    from gui.app import CrispApp
     app = CrispApp()
     app.mainloop()

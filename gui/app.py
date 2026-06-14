@@ -296,7 +296,7 @@ class CrispApp(ctk.CTk):
             return
 
         total = sum(self._scan_results.get(k, (0, []))[0] for k in selected)
-        msg = f"This will permanently delete ~{cleaner.format_size(total)} of files."
+        msg = f"This will permanently delete up to ~{cleaner.format_size(total)} of files.\n(Files newer than 24 h are skipped automatically.)"
         if do_recycle:
             msg += "\nThe Recycle Bin will also be emptied."
         msg += "\n\nProceed?"
@@ -385,9 +385,11 @@ class CrispApp(ctk.CTk):
                     text=f"Found  {cleaner.format_size(total)}  of junk files",
                     text_color=SUCCESS,
                 )
-            self._status_label.configure(
-                text="Scan complete  •  Click ▶ Preview on any category to inspect files"
+            hint = (
+                "Scan complete  •  Click ▶ Preview on any category to inspect files"
+                if total > 0 else "Scan complete"
             )
+            self._status_label.configure(text=hint)
             self._scan_btn.configure(state="normal", text="⟳  Scan Now")
             self._clean_btn.configure(state="normal")
 

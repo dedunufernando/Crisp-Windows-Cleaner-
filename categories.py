@@ -3,7 +3,8 @@ from pathlib import Path
 
 
 def _env(var: str) -> Path:
-    return Path(os.environ.get(var, ""))
+    val = os.environ.get(var)
+    return Path(val) if val else Path(os.path.expanduser("~"))
 
 
 def _exists(p: Path) -> list[Path]:
