@@ -346,12 +346,23 @@ class CrispApp(ctk.CTk):
     # ── Queue polling ─────────────────────────────────────────────────────────
 
     def _poll_queue(self) -> None:
+        # Drain the queue, but never let a handler error kill the poll loop —
+        # otherwise the reschedule below is skipped, scan_done is never
+        # processed, and the UI pulses forever. Reschedule in a finally.
         try:
             while True:
-                self._handle_msg(self._queue.get_nowait())
-        except queue.Empty:
-            pass
-        self.after(50, self._poll_queue)
+                try:
+                    msg = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._handle_msg(msg)
+                except Exception as e:  # noqa: BLE001 — keep the pump alive
+                    import traceback
+                    traceback.print_exc()
+                    self._log.log("error", f"UI error: {e}")
+        finally:
+            self.after(50, self._poll_queue)
 
     def _handle_msg(self, msg: tuple) -> None:
         kind = msg[0]

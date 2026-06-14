@@ -25,6 +25,22 @@ def _trunc(s: str, n: int = _TRUNC) -> str:
     return s[:h] + "…" + s[-(n - h - 1):]
 
 
+def _blend(fg: str, bg: str, alpha: float) -> str:
+    """
+    Blend two #RRGGBB colors and return a valid 6-digit hex.
+
+    Tk does not understand 8-digit (#RRGGBBAA) colors — passing one raises
+    TclError. We emulate a translucent accent by mixing it into the background
+    at the given alpha so the result stays a plain #RRGGBB string.
+    """
+    fr, fg_, fb = int(fg[1:3], 16), int(fg[3:5], 16), int(fg[5:7], 16)
+    br, bg_, bb = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
+    r = round(fr * alpha + br * (1 - alpha))
+    g = round(fg_ * alpha + bg_ * (1 - alpha))
+    b = round(fb * alpha + bb * (1 - alpha))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 # ── File list panel ───────────────────────────────────────────────────────────
 
 class FileListPanel(ctk.CTkFrame):
@@ -229,9 +245,11 @@ class CategoryCard(ctk.CTkFrame):
                 text=f"  •  {file_count:,} files",
                 text_color=TEXT_2,
             )
-        # Highlight card border when something is found
+        # Highlight card border when something is found. Tk has no alpha, so we
+        # blend the accent into the card background (~33%) instead of appending
+        # an "55" alpha byte, which produced an invalid 8-digit hex color.
         if size_bytes > 0:
-            self.configure(border_color=self._accent + "55")
+            self.configure(border_color=_blend(self._accent, BG_CARD, 0.33))
 
     def set_files(self, files: list[Path]) -> None:
         self._files = files
