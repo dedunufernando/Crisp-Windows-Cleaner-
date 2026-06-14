@@ -1,5 +1,6 @@
 import queue
 import threading
+import time
 import customtkinter as ctk
 from tkinter import messagebox
 
@@ -316,6 +317,8 @@ class CrispApp(ctk.CTk):
             daemon=True,
         ).start()
 
+    _MAX_SKIP_LOGS = 25   # log this many skipped files individually, then summarise
+
     def _clean_worker(self, selected: list[str], do_recycle: bool) -> None:
         all_files = []
         for key in selected:
@@ -324,11 +327,28 @@ class CrispApp(ctk.CTk):
 
         total_files = max(len(all_files), 1)
         done = [0]
+        skip_logged = [0]
+        last_ui = [0.0]
 
         def progress_cb(action: str, msg: str) -> None:
+            # Called once per file. Do NOT enqueue a message per file — on a big
+            # cleanup that floods the queue and spawns tens of thousands of log
+            # widgets, freezing the UI. Throttle progress to ~10 updates/sec and
+            # only log skipped/error files (rare and useful), capped.
             done[0] += 1
-            self._queue.put(("log", action, msg))
-            self._queue.put(("progress", done[0] / total_files))
+            if action == cleaner._SKIPPED or action == "error":
+                if skip_logged[0] < self._MAX_SKIP_LOGS:
+                    skip_logged[0] += 1
+                    self._queue.put(("log", action, msg))
+                elif skip_logged[0] == self._MAX_SKIP_LOGS:
+                    skip_logged[0] += 1
+                    self._queue.put(("log", "skipped", "… further skipped files hidden"))
+
+            now = time.monotonic()
+            if now - last_ui[0] >= 0.1 or done[0] == total_files:
+                last_ui[0] = now
+                self._queue.put(("progress", done[0] / total_files))
+                self._queue.put(("clean_status", done[0], total_files))
 
         freed, skipped = cleaner.clean_category(all_files, progress_cb=progress_cb)
 
@@ -369,6 +389,12 @@ class CrispApp(ctk.CTk):
 
         if kind == "progress":
             self._progress.set(msg[1])
+
+        elif kind == "clean_status":
+            _, done_n, total_n = msg
+            self._status_label.configure(
+                text=f"Cleaning…   {done_n:,} / {total_n:,} files"
+            )
 
         elif kind == "scan_live":
             # Live update fired by workers every ~100 files
@@ -413,8 +439,9 @@ class CrispApp(ctk.CTk):
         elif kind == "clean_done":
             _, freed, skipped = msg
             self._progress.set(1)
+            skip_note = f"  •  Skipped {skipped:,} (in use or under 24h)" if skipped else ""
             self._status_label.configure(
-                text=f"Done  •  Freed {cleaner.format_size(freed)}  •  Skipped {skipped} locked files"
+                text=f"Done  •  Freed {cleaner.format_size(freed)}{skip_note}"
             )
             self._scan_btn.configure(state="normal", text="⟳  Scan Now")
             self._clean_btn.configure(state="disabled", text="✦  Clean Selected")

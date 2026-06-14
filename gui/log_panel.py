@@ -1,6 +1,8 @@
 import customtkinter as ctk
 from datetime import datetime
 
+_MAX_ROWS = 200   # cap visible rows so the log can never grow unbounded
+
 
 class LogPanel(ctk.CTkScrollableFrame):
     def __init__(self, master, **kwargs):
@@ -33,6 +35,10 @@ class LogPanel(ctk.CTkScrollableFrame):
         )
         label.pack(fill="x", padx=6, pady=1)
         self._rows.append(label)
+
+        # Trim oldest rows so widget count stays bounded
+        while len(self._rows) > _MAX_ROWS:
+            self._rows.pop(0).destroy()
 
         # Scroll to bottom — guard against private-attr changes between CTk versions
         try:
