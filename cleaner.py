@@ -1,6 +1,7 @@
 import ctypes
 import os
 import queue as _q
+import stat as _stat
 import threading as _t
 import time
 from pathlib import Path
@@ -23,6 +24,29 @@ def _is_admin() -> bool:
 
 
 IS_ADMIN = _is_admin()
+
+
+def _is_reparse_point(entry: os.DirEntry) -> bool:
+    """
+    True for Windows junctions / symlinks (any reparse point).
+
+    These must NOT be descended into: many Windows junctions point back up the
+    tree (e.g. %LOCALAPPDATA%\\Application Data -> itself) and form cycles. Since
+    DirEntry.is_dir(follow_symlinks=False) still reports junctions as directories,
+    we have to detect and skip them explicitly — otherwise the recursive scan
+    walks the cycle up to MAX_SCAN_DEPTH levels and explodes into millions of
+    duplicate visits, making the scan appear to hang.
+    """
+    try:
+        if entry.is_symlink():
+            return True
+        is_junction = getattr(entry, "is_junction", None)  # Python 3.12+
+        if is_junction is not None and is_junction():
+            return True
+        attrs = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)
+        return bool(attrs & getattr(_stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    except (OSError, ValueError):
+        return False
 
 
 # ── Parallel directory scanner ─────────────────────────────────────────────────
@@ -81,7 +105,13 @@ def scan_all_categories(
                                     local_files.append(Path(e.path))
                                     local_size += e.stat(follow_symlinks=False).st_size
                                 elif e.is_dir(follow_symlinks=False):
-                                    if depth < MAX_SCAN_DEPTH and not _abort.is_set():
+                                    # Skip junctions/symlinks — they can form
+                                    # cycles and make the scan loop forever.
+                                    if (
+                                        depth < MAX_SCAN_DEPTH
+                                        and not _abort.is_set()
+                                        and not _is_reparse_point(e)
+                                    ):
                                         dir_q.put((key, e.path, depth + 1))
                             except OSError:
                                 pass
