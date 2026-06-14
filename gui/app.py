@@ -389,20 +389,22 @@ class CrispApp(ctk.CTk):
             self._progress.set(1.0)
             if total == 0:
                 self._total_label.configure(
-                    text="Your system looks clean.", text_color=SUCCESS
-                )
-            else:
-                self._total_label.configure(
-                    text=f"Found  {cleaner.format_size(total)}  of junk files",
+                    text="Nothing to clean — your system is already tidy.",
                     text_color=SUCCESS,
                 )
-            hint = (
-                "Scan complete  •  Click ▶ Preview on any category to inspect files"
-                if total > 0 else "Scan complete"
-            )
-            self._status_label.configure(text=hint)
+                self._status_label.configure(text="Scan complete")
+                self._clean_btn.configure(state="disabled")
+            else:
+                self._total_label.configure(
+                    text=f"{cleaner.format_size(total)} of junk can be cleaned",
+                    text_color=SUCCESS,
+                )
+                self._status_label.configure(
+                    text="Review the categories below — click ▶ Preview to see exactly "
+                         "which files will be removed, then Clean Selected."
+                )
+                self._clean_btn.configure(state="normal")
             self._scan_btn.configure(state="normal", text="⟳  Scan Now")
-            self._clean_btn.configure(state="normal")
 
         elif kind == "log":
             _, action, text = msg

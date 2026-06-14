@@ -51,15 +51,15 @@ class FileListPanel(ctk.CTkFrame):
         self._accent = accent
         self._widgets: list = []
 
-    def populate(self, files: list[Path]) -> None:
+    def populate(self, files: list[tuple[Path, int]]) -> None:
         for w in self._widgets:
             w.destroy()
         self._widgets.clear()
 
-        # Header row
+        # Header row — make it clear these are the files that will be removed
         total_label = ctk.CTkLabel(
             self,
-            text=f"  Largest files  ({len(files):,} total — showing top {min(len(files), _MAX_FILES)})",
+            text=f"  These files will be removed  ·  {len(files):,} total, showing the {min(len(files), _MAX_FILES)} largest",
             font=("Segoe UI", 10),
             text_color=TEXT_2,
             anchor="w",
@@ -71,17 +71,11 @@ class FileListPanel(ctk.CTkFrame):
         div.pack(fill="x", padx=8, pady=(0, 4))
         self._widgets.append(div)
 
-        # Sort largest first — guard against files deleted since scan
-        def _size(f: Path) -> int:
-            try:
-                return f.stat().st_size
-            except OSError:
-                return 0
+        # Sizes were captured during the scan — sort in memory, never touch disk
+        # here (re-stat'ing thousands of files on the UI thread froze the window).
+        ranked = sorted(files, key=lambda e: e[1], reverse=True)[:_MAX_FILES]
 
-        ranked = sorted(files, key=_size, reverse=True)[:_MAX_FILES]
-
-        for f in ranked:
-            sz = _size(f)
+        for path, sz in ranked:
             row = ctk.CTkFrame(self, fg_color=BG_FILEROW, corner_radius=4)
             row.pack(fill="x", padx=8, pady=2)
             self._widgets.append(row)
@@ -97,7 +91,7 @@ class FileListPanel(ctk.CTkFrame):
 
             ctk.CTkLabel(
                 row,
-                text=_trunc(str(f)),
+                text=_trunc(str(path)),
                 font=("Consolas", 10),
                 text_color=TEXT_2,
                 anchor="w",
@@ -138,7 +132,7 @@ class CategoryCard(ctk.CTkFrame):
         )
         self.key = key
         self._accent = meta["accent"]
-        self._files: list[Path] = []
+        self._files: list[tuple[Path, int]] = []
         self._expanded = False
         self._var = ctk.IntVar(value=1 if meta["default_on"] else 0)
 
@@ -210,8 +204,8 @@ class CategoryCard(ctk.CTkFrame):
 
         self._preview_btn = ctk.CTkButton(
             bottom,
-            text="▶  Preview",
-            width=104,
+            text="▶  Preview files",
+            width=128,
             height=26,
             font=("Segoe UI", 11),
             fg_color="#111d33",
@@ -251,7 +245,7 @@ class CategoryCard(ctk.CTkFrame):
         if size_bytes > 0:
             self.configure(border_color=_blend(self._accent, BG_CARD, 0.33))
 
-    def set_files(self, files: list[Path]) -> None:
+    def set_files(self, files: list[tuple[Path, int]]) -> None:
         self._files = files
         if files:
             self._preview_btn.configure(
@@ -263,7 +257,7 @@ class CategoryCard(ctk.CTkFrame):
         self._size_label.configure(text="—", text_color=TEXT_2)
         self._count_label.configure(text="")
         self._files = []
-        self._preview_btn.configure(state="disabled", text="▶  Preview", text_color=TEXT_2)
+        self._preview_btn.configure(state="disabled", text="▶  Preview files", text_color=TEXT_2)
         self.configure(border_color=BORDER)
         if self._expanded:
             self._file_panel.pack_forget()
@@ -277,11 +271,11 @@ class CategoryCard(ctk.CTkFrame):
         if self._expanded:
             self._file_panel.populate(self._files)
             self._file_panel.pack(fill="x", padx=12, pady=(0, 12))
-            self._preview_btn.configure(text="▼  Hide")
+            self._preview_btn.configure(text="▼  Hide files")
         else:
             self._file_panel.pack_forget()
             self._file_panel.clear()
-            self._preview_btn.configure(text="▶  Preview")
+            self._preview_btn.configure(text="▶  Preview files")
 
 
 # ── Recycle bin card ──────────────────────────────────────────────────────────
@@ -365,7 +359,7 @@ class ScanPanel(ctk.CTkFrame):
         if key in self._cards:
             self._cards[key].set_size(size_bytes, file_count)
 
-    def set_files(self, key: str, files: list[Path]) -> None:
+    def set_files(self, key: str, files: list[tuple[Path, int]]) -> None:
         if key in self._cards:
             self._cards[key].set_files(files)
 

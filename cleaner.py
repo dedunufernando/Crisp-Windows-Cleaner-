@@ -55,9 +55,11 @@ def scan_all_categories(
     paths_by_key: dict[str, list[Path]],
     progress_cb: Callable[[int, int], None] | None = None,
     timeout_sec: float = SCAN_TIMEOUT_SEC,
-) -> dict[str, tuple[int, list[Path]]]:
+) -> dict[str, tuple[int, list[tuple[Path, int]]]]:
     """
     Scan every supplied category in a shared thread pool of _N_WORKERS workers.
+
+    Returns {key: (total_bytes, [(path, size), ...])}.
 
     progress_cb(files_found, bytes_found) fires at most every 0.25 s.
     Always returns within timeout_sec seconds (partial results on timeout).
@@ -93,7 +95,10 @@ def scan_all_categories(
 
             key, current, depth = item
             try:
-                local_files: list[Path] = []
+                # Each entry is (path, size); capturing the size here means the
+                # UI never has to re-stat files later (e.g. when building the
+                # Preview list), which previously froze the window on big folders.
+                local_files: list[tuple[Path, int]] = []
                 local_size = 0
                 try:
                     with os.scandir(current) as it:
@@ -102,8 +107,9 @@ def scan_all_categories(
                                 break
                             try:
                                 if e.is_file(follow_symlinks=False):
-                                    local_files.append(Path(e.path))
-                                    local_size += e.stat(follow_symlinks=False).st_size
+                                    sz = e.stat(follow_symlinks=False).st_size
+                                    local_files.append((Path(e.path), sz))
+                                    local_size += sz
                                 elif e.is_dir(follow_symlinks=False):
                                     # Skip junctions/symlinks — they can form
                                     # cycles and make the scan loop forever.
@@ -188,14 +194,17 @@ def _file_age_ok(path: Path) -> bool:
 # ── Clean ──────────────────────────────────────────────────────────────────────
 
 def clean_category(
-    file_list: list[Path],
+    file_list: list[Path] | list[tuple[Path, int]],
     progress_cb: Callable[[str, str], None] | None = None,
     skip_age_check: bool = False,
 ) -> tuple[int, int]:
+    # Accept either [Path, ...] or the scanner's [(path, size), ...] entries.
+    paths = [f[0] if isinstance(f, tuple) else f for f in file_list]
+
     freed = 0
     skipped = 0
 
-    for f in file_list:
+    for f in paths:
         if not skip_age_check and not _file_age_ok(f):
             skipped += 1
             if progress_cb:
@@ -212,7 +221,7 @@ def clean_category(
             if progress_cb:
                 progress_cb(_SKIPPED, f"In use: {f.name}")
 
-    _clean_empty_dirs(file_list)
+    _clean_empty_dirs(paths)
     return freed, skipped
 
 
